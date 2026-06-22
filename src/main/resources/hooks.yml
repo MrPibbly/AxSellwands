@@ -23,6 +23,8 @@ hook-settings:
   # economy
   CoinsEngine:
     currency-name: "coins"
+  ExcellentEconomy:
+    currency-name: "coins"
   # protection
   BentoBox:
     register: true
@@ -53,4 +55,4 @@ hook-settings:
     register: true
 
 # do not change this
-version: 2
+version: 3

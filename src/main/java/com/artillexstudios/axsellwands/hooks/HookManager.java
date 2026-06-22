@@ -2,8 +2,10 @@ package com.artillexstudios.axsellwands.hooks;
 
 import com.artillexstudios.axapi.reflection.ClassUtils;
 import com.artillexstudios.axapi.utils.StringUtils;
+import com.artillexstudios.axsellwands.hooks.container.ContainerHook;
 import com.artillexstudios.axsellwands.hooks.currency.CoinsEngineHook;
 import com.artillexstudios.axsellwands.hooks.currency.CurrencyHook;
+import com.artillexstudios.axsellwands.hooks.currency.ExcellentEconomyHook;
 import com.artillexstudios.axsellwands.hooks.currency.PlayerPointsHook;
 import com.artillexstudios.axsellwands.hooks.currency.RoyaleEconomyHook;
 import com.artillexstudios.axsellwands.hooks.currency.VaultHook;
@@ -25,6 +27,7 @@ import com.artillexstudios.axsellwands.hooks.protection.WorldGuardHook;
 import com.artillexstudios.axsellwands.hooks.shop.*;
 import org.bukkit.Bukkit;
 import org.bukkit.Location;
+import org.bukkit.block.Block;
 import org.bukkit.entity.Player;
 import org.bukkit.plugin.Plugin;
 import org.jetbrains.annotations.NotNull;
@@ -37,6 +40,7 @@ import static com.artillexstudios.axsellwands.AxSellwands.HOOKS;
 public class HookManager {
     private static CurrencyHook currency = null;
     private static PricesHook shopPrices = null;
+    private static final HashSet<ContainerHook> CONTAINER_HOOKS = new HashSet<>();
     private static final HashSet<ProtectionHook> PROTECTION_HOOKS = new HashSet<>();
 
     public static void setupHooks() {
@@ -141,6 +145,16 @@ public class HookManager {
                     Bukkit.getConsoleSender().sendMessage(StringUtils.formatToString("&#33FF33[AxSellwands] Hooked into CoinsEngine!"));
                 } else {
                     Bukkit.getConsoleSender().sendMessage(StringUtils.formatToString("&#FF3333[AxSellwands] CoinsEngine is set in hooks.yml, but it is not installed, please download it or change it to stop errors!"));
+                }
+                break;
+            }
+
+            case "EXCELLENTECONOMY": {
+                if (Bukkit.getPluginManager().getPlugin("CoinsEngine") != null || Bukkit.getPluginManager().getPlugin("ExcellentEconomy") != null) {
+                    currency = new ExcellentEconomyHook();
+                    Bukkit.getConsoleSender().sendMessage(StringUtils.formatToString("&#33FF33[AxSellwands] Hooked into ExcellentEconomy!"));
+                } else {
+                    Bukkit.getConsoleSender().sendMessage(StringUtils.formatToString("&#FF3333[AxSellwands] ExcellentEconomy is set in hooks.yml, but it is not installed, please download it or change it to stop errors!"));
                 }
                 break;
             }
@@ -285,12 +299,30 @@ public class HookManager {
         return shopPrices;
     }
 
+    @NotNull
+    public static HashSet<ContainerHook> getContainerHooks() {
+        return CONTAINER_HOOKS;
+    }
+
+    @NotNull
+    public static HashSet<ProtectionHook> getProtectionHooks() {
+        return PROTECTION_HOOKS;
+    }
+
     @SuppressWarnings("BooleanMethodIsAlwaysInverted")
     public static boolean canBuildAt(@NotNull Player player, @NotNull Location location) {
-        for (ProtectionHook pm : PROTECTION_HOOKS) {
-            if (!pm.canPlayerBuildAt(player, location)) return false;
+        for (ProtectionHook hook : PROTECTION_HOOKS) {
+            if (!hook.canPlayerBuildAt(player, location)) return false;
         }
-
         return true;
+    }
+
+    @Nullable
+    public static ContainerHook getContainerAt(@NotNull Player player, @NotNull Block block) {
+        for (ContainerHook hook : CONTAINER_HOOKS) {
+            if (!hook.isContainer(player, block)) continue;
+            return hook;
+        }
+        return null;
     }
 }

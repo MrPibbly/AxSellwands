@@ -1,16 +1,17 @@
 package com.artillexstudios.axsellwands.listeners;
 
+import com.artillexstudios.axapi.items.NBTWrapper;
 import com.artillexstudios.axapi.utils.ActionBar;
 import com.artillexstudios.axapi.utils.ItemBuilder;
 import com.artillexstudios.axapi.utils.StringUtils;
 import com.artillexstudios.axapi.utils.Title;
 import com.artillexstudios.axsellwands.api.events.AxSellwandsSellEvent;
 import com.artillexstudios.axsellwands.hooks.HookManager;
+import com.artillexstudios.axsellwands.hooks.container.ContainerHook;
 import com.artillexstudios.axsellwands.sellwands.Sellwand;
 import com.artillexstudios.axsellwands.sellwands.Sellwands;
 import com.artillexstudios.axsellwands.utils.HistoryUtils;
 import com.artillexstudios.axsellwands.utils.HologramUtils;
-import com.artillexstudios.axsellwands.utils.NBTUtils;
 import com.artillexstudios.axsellwands.utils.NumberUtils;
 import org.bukkit.Bukkit;
 import org.bukkit.Material;
@@ -20,7 +21,6 @@ import org.bukkit.block.Block;
 import org.bukkit.block.Container;
 import org.bukkit.entity.Player;
 import org.bukkit.event.EventHandler;
-import org.bukkit.event.EventPriority;
 import org.bukkit.event.Listener;
 import org.bukkit.event.block.Action;
 import org.bukkit.event.player.PlayerInteractEvent;
@@ -38,26 +38,32 @@ import static com.artillexstudios.axsellwands.AxSellwands.MESSAGEUTILS;
 
 public class SellwandUseListener implements Listener {
 
-    @EventHandler (ignoreCancelled = true, priority = EventPriority.HIGHEST)
+    @EventHandler(ignoreCancelled = true)
     public void onInteract(@NotNull PlayerInteractEvent event) {
         if (event.getItem() == null) return;
-        final Block block = event.getClickedBlock();
+        Block block = event.getClickedBlock();
         if (block == null) return;
-        final String type = NBTUtils.readStringFromNBT(event.getItem(), "axsellwands-type");
+        NBTWrapper wrapper = new NBTWrapper(event.getItem());
+        String type = wrapper.getString("axsellwands-type");
         if (type == null) return;
-        final Sellwand sellwand = Sellwands.getSellwands().get(type);
+        Sellwand sellwand = Sellwands.getSellwands().get(type);
         event.setCancelled(true);
         if (sellwand == null) return;
-        final Player player = event.getPlayer();
+        Player player = event.getPlayer();
 
-        final ItemStack[] contents;
-        if (block.getState() instanceof Container)
+        ItemStack[] contents;
+        ContainerHook containerHook = HookManager.getContainerAt(player, block);
+        if (containerHook != null) {
+            contents = containerHook.getItems(player, block).toArray(new ItemStack[0]);
+        } else if (block.getState() instanceof Container) {
             contents = ((Container) block.getState()).getInventory().getContents();
-        else if (block.getType() == Material.ENDER_CHEST)
+        } else if (block.getType() == Material.ENDER_CHEST) {
             contents = player.getEnderChest().getContents();
-        else return;
+        } else {
+            return; // not a container
+        }
 
-        final boolean hasBypass = player.hasPermission("axsellwands.admin");
+        boolean hasBypass = player.hasPermission("axsellwands.admin");
 
         if (!hasBypass && !HookManager.canBuildAt(player, block.getLocation())) {
             MESSAGEUTILS.sendLang(player, "no-permission");
@@ -69,25 +75,24 @@ public class SellwandUseListener implements Listener {
             return;
         }
 
-        long lastUsed = NBTUtils.readLongFromNBT(event.getItem(), "axsellwands-lastused");
-
-        if (System.currentTimeMillis() - lastUsed < sellwand.getCooldown() && event.getAction() == Action.RIGHT_CLICK_BLOCK) {
+        Long lastUsed = wrapper.getLong("axsellwands-lastused");
+        if (lastUsed != null && System.currentTimeMillis() - lastUsed < sellwand.getCooldown() && event.getAction() == Action.RIGHT_CLICK_BLOCK) {
             MESSAGEUTILS.sendLang(player, "cooldown", Collections.singletonMap("%time%", Long.toString(Math.round((sellwand.getCooldown() - System.currentTimeMillis() + lastUsed) / 1000D))));
             return;
         }
 
-        final UUID uuid = NBTUtils.readUUIDFromNBT(event.getItem(), "axsellwands-uuid");
-        final float multiplier = NBTUtils.readFloatFromNBT(event.getItem(), "axsellwands-multiplier");
-        int uses = NBTUtils.readIntegerFromNBT(event.getItem(), "axsellwands-uses");
-        final int maxUses = NBTUtils.readIntegerFromNBT(event.getItem(), "axsellwands-max-uses");
-        final int soldAmount = NBTUtils.readIntegerFromNBT(event.getItem(), "axsellwands-sold-amount");
-        final double soldPrice = NBTUtils.readDoubleFromNBT(event.getItem(), "axsellwands-sold-price");
+        UUID uuid = wrapper.getUUID("axsellwands-uuid");
+        float multiplier = wrapper.getFloatOr("axsellwands-multiplier", 1);
+        int uses = wrapper.getIntOr("axsellwands-uses", -1);
+        int maxUses = wrapper.getIntOr("axsellwands-max-uses", -1);
+        int soldAmount = wrapper.getIntOr("axsellwands-sold-amount", 0);
+        double soldPrice = wrapper.getDoubleOr("axsellwands-sold-price", 0);
 
         int newSoldAmount = 0;
         double newSoldPrice = 0;
 
         if (event.getAction() == Action.RIGHT_CLICK_BLOCK) {
-            final Map<Material, Integer> items = new HashMap<>();
+            Map<Material, Integer> items = new HashMap<>();
             for (ItemStack it : contents) {
                 if (it == null) continue;
                 double price = HookManager.getShopPrices().getPrice(player, it);
@@ -110,7 +115,7 @@ public class SellwandUseListener implements Listener {
                 return;
             }
 
-            final AxSellwandsSellEvent apiEvent = new AxSellwandsSellEvent(player, newSoldPrice, newSoldAmount);
+            AxSellwandsSellEvent apiEvent = new AxSellwandsSellEvent(player, newSoldPrice, newSoldAmount);
             Bukkit.getPluginManager().callEvent(apiEvent);
             if (apiEvent.isCancelled()) return;
             newSoldPrice = apiEvent.getMoneyMade();
@@ -125,14 +130,15 @@ public class SellwandUseListener implements Listener {
             str.append("]");
             HistoryUtils.writeToHistory(String.format("%s sold %dx items %s and earned %s (multiplier: %s, uses: %d)", player.getName(), newSoldAmount, str, newSoldPrice, multiplier, uses - 1));
 
-            final HashMap<String, String> replacements = new HashMap<>();
+            HashMap<String, String> replacements = new HashMap<>();
             replacements.put("%amount%", "" + newSoldAmount);
             replacements.put("%price%", NumberUtils.formatNumber(newSoldPrice));
 
             HookManager.getCurrency().giveBalance(player, newSoldPrice);
 
-            if (CONFIG.getBoolean("hologram.enabled", true))
+            if (CONFIG.getBoolean("hologram.enabled", true)) {
                 HologramUtils.spawnHologram(player, block.getLocation().add(0.5, 0.5, 0.5), replacements);
+            }
 
             MESSAGEUTILS.sendLang(player, "sell.chat", replacements);
 
@@ -140,9 +146,12 @@ public class SellwandUseListener implements Listener {
                 ActionBar.create(StringUtils.format(LANG.getString("sell.actionbar"), replacements)).send(player);
             }
 
-            if (LANG.getSection("sell.title") != null && !LANG.getString("sell.title.title").isBlank())
-                Title.create(StringUtils.format(LANG.getString("sell.title.title"), replacements),
-                        StringUtils.format(LANG.getString("sell.title.subtitle"), replacements), 10, 40, 10).send(player);
+            if (LANG.getSection("sell.title") != null && !LANG.getString("sell.title.title").isBlank()) {
+                Title.create(
+                        StringUtils.format(LANG.getString("sell.title.title"), replacements),
+                        StringUtils.format(LANG.getString("sell.title.subtitle"), replacements), 10, 40, 10
+                ).send(player);
+            }
 
 
             if (!LANG.getString("sounds.sell").isEmpty()) {
@@ -156,7 +165,7 @@ public class SellwandUseListener implements Listener {
             if (uses != -1) {
                 uses--;
 
-                if (uses < 0) {
+                if (uses < CONFIG.getInt("minimum-durability", 1)) {
                     event.getItem().setAmount(0);
                     return;
                 }
@@ -169,19 +178,21 @@ public class SellwandUseListener implements Listener {
             replacements.put("%sold-amount%", "" + (soldAmount + newSoldAmount));
             replacements.put("%sold-price%", NumberUtils.formatNumber(soldPrice + newSoldPrice));
 
-            final Sellwand wand = Sellwands.getSellwands().get(type);
-            final ItemBuilder builder = new ItemBuilder(wand.getItemSection(), replacements);
+            Sellwand wand = Sellwands.getSellwands().get(type);
+            ItemBuilder builder = ItemBuilder.create(wand.getItemSection(), replacements);
 
             event.getItem().setItemMeta(builder.get().getItemMeta());
 
-            NBTUtils.writeToNBT(event.getItem(), "axsellwands-uuid", uuid);
-            NBTUtils.writeToNBT(event.getItem(), "axsellwands-uses", uses);
-            NBTUtils.writeToNBT(event.getItem(), "axsellwands-lastused", System.currentTimeMillis());
-            NBTUtils.writeToNBT(event.getItem(), "axsellwands-sold-amount", soldAmount + newSoldAmount);
-            NBTUtils.writeToNBT(event.getItem(), "axsellwands-sold-price", soldPrice + newSoldPrice);
-            NBTUtils.writeToNBT(event.getItem(), "axsellwands-type", type);
-            NBTUtils.writeToNBT(event.getItem(), "axsellwands-multiplier", multiplier);
-            NBTUtils.writeToNBT(event.getItem(), "axsellwands-max-uses", maxUses);
+            wrapper = new NBTWrapper(event.getItem());
+            wrapper.set("axsellwands-uuid", uuid);
+            wrapper.set("axsellwands-uses", uses);
+            wrapper.set("axsellwands-lastused", System.currentTimeMillis());
+            wrapper.set("axsellwands-sold-amount", soldAmount + newSoldAmount);
+            wrapper.set("axsellwands-sold-price", soldPrice + newSoldPrice);
+            wrapper.set("axsellwands-type", type);
+            wrapper.set("axsellwands-multiplier", multiplier);
+            wrapper.set("axsellwands-max-uses", maxUses);
+            wrapper.build();
 
             if (block.getState() instanceof Container container) container.update();
         } else {
@@ -200,7 +211,7 @@ public class SellwandUseListener implements Listener {
                 return;
             }
 
-            final HashMap<String, String> replacements = new HashMap<>();
+            HashMap<String, String> replacements = new HashMap<>();
             replacements.put("%amount%", "" + newSoldAmount);
             replacements.put("%price%", NumberUtils.formatNumber(newSoldPrice));
 

@@ -9,6 +9,7 @@ import static com.artillexstudios.axsellwands.AxSellwands.CONFIG;
 import static com.artillexstudios.axsellwands.AxSellwands.LANG;
 
 public class CommandMessages implements LocaleReader {
+
     @Override
     public boolean containsKey(String s) {
         return true;
@@ -64,7 +65,7 @@ public class CommandMessages implements LocaleReader {
         return StringUtils.formatToString(CONFIG.getString("prefix", "") + res);
     }
 
-    private final Locale locale = new Locale("en", "US");
+    private final Locale locale = Locale.of("en", "US");
 
     @Override
     public Locale getLocale() {
